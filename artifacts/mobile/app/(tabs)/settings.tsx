@@ -1,27 +1,98 @@
 import React, { useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme, ThemeMode } from '@/context/ThemeContext';
+import { useYouTube } from '@/context/YouTubeContext';
 
 const QUALITY_OPTIONS = ['Low (64kbps)', 'Normal (128kbps)', 'High (256kbps)', 'Very High (320kbps)'];
 const EQ_BANDS = ['60Hz', '170Hz', '310Hz', '600Hz', '1kHz', '3kHz', '6kHz', '12kHz', '14kHz', '16kHz'];
 
-function SettingRow({ icon, label, value, onPress }: { icon: string; label: string; value?: string; onPress?: () => void }) {
+function SettingRow({ icon, label, value, onPress, danger }: {
+  icon: string; label: string; value?: string; onPress?: () => void; danger?: boolean;
+}) {
   const colors = useColors();
   return (
     <Pressable onPress={onPress} style={[styles.row, { borderBottomColor: colors.border }]}>
-      <View style={[styles.iconWrap, { backgroundColor: colors.secondary }]}>
-        <Feather name={icon as any} size={18} color={colors.foreground} />
+      <View style={[styles.iconWrap, { backgroundColor: danger ? '#ff000022' : colors.secondary }]}>
+        <Feather name={icon as any} size={18} color={danger ? '#ef4444' : colors.foreground} />
       </View>
       <View style={styles.rowInfo}>
-        <Text style={[styles.rowLabel, { color: colors.foreground }]}>{label}</Text>
+        <Text style={[styles.rowLabel, { color: danger ? '#ef4444' : colors.foreground }]}>{label}</Text>
       </View>
       {value ? <Text style={[styles.rowValue, { color: colors.mutedForeground }]}>{value}</Text> : null}
-      <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+      {!danger && <Feather name="chevron-right" size={16} color={colors.mutedForeground} />}
     </Pressable>
+  );
+}
+
+function YouTubeAccountSection() {
+  const colors = useColors();
+  const { user, isLoading, isReady, signIn, signOut } = useYouTube();
+
+  if (user) {
+    return (
+      <View style={[styles.ytConnected, { backgroundColor: colors.card }]}>
+        {/* Avatar + info */}
+        <View style={styles.ytUserRow}>
+          {user.picture ? (
+            <Image source={{ uri: user.picture }} style={styles.ytAvatar} />
+          ) : (
+            <View style={[styles.ytAvatarFallback, { backgroundColor: colors.primary }]}>
+              <Text style={styles.ytAvatarInitial}>{user.name?.[0] ?? 'Y'}</Text>
+            </View>
+          )}
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.ytName, { color: colors.foreground }]} numberOfLines={1}>{user.name}</Text>
+            <Text style={[styles.ytEmail, { color: colors.mutedForeground }]} numberOfLines={1}>{user.email}</Text>
+          </View>
+          <View style={[styles.ytBadge, { backgroundColor: '#ff000022' }]}>
+            <Feather name="youtube" size={12} color="#ef4444" />
+            <Text style={styles.ytBadgeText}>Connected</Text>
+          </View>
+        </View>
+
+        {/* Sign out */}
+        <Pressable
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); signOut(); }}
+          style={[styles.ytSignOutBtn, { borderColor: colors.border }]}
+        >
+          <Feather name="log-out" size={14} color="#ef4444" />
+          <Text style={[styles.ytSignOutText, { color: '#ef4444' }]}>Disconnect account</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.ytDisconnected, { backgroundColor: colors.card }]}>
+      <View style={styles.ytDisconnectedTop}>
+        <View style={[styles.ytIconBig, { backgroundColor: '#ff000022' }]}>
+          <Feather name="youtube" size={28} color="#ef4444" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.ytConnectTitle, { color: colors.foreground }]}>Connect YouTube</Text>
+          <Text style={[styles.ytConnectDesc, { color: colors.mutedForeground }]}>
+            Access your playlists and liked videos
+          </Text>
+        </View>
+      </View>
+      <Pressable
+        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); signIn(); }}
+        disabled={!isReady || isLoading}
+        style={[styles.ytSignInBtn, { opacity: (!isReady || isLoading) ? 0.5 : 1 }]}
+      >
+        {/* Google G logo colours */}
+        <View style={styles.googleG}>
+          <Text style={styles.googleGText}>G</Text>
+        </View>
+        <Text style={styles.ytSignInText}>
+          {isLoading ? 'Connecting…' : 'Sign in with Google'}
+        </Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -49,6 +120,14 @@ export default function SettingsScreen() {
     >
       <View style={{ paddingTop: topPad + 12, paddingHorizontal: 16, paddingBottom: 8 }}>
         <Text style={[styles.pageTitle, { color: colors.foreground }]}>Settings</Text>
+      </View>
+
+      {/* YouTube Account */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>YOUTUBE ACCOUNT</Text>
+        <View style={{ paddingHorizontal: 16 }}>
+          <YouTubeAccountSection />
+        </View>
       </View>
 
       {/* Theme */}
@@ -106,8 +185,7 @@ export default function SettingsScreen() {
                   style={[styles.eqTrack, { backgroundColor: colors.secondary }]}
                   onStartShouldSetResponder={() => true}
                   onResponderMove={(e) => {
-                    const { locationY, target } = e.nativeEvent;
-                    // Simple vertical touch to set gain (-12 to +12)
+                    const { locationY } = e.nativeEvent;
                     const gain = Math.round(12 - (locationY / 80) * 24);
                     setEqGains((prev) => {
                       const next = [...prev];
@@ -136,9 +214,8 @@ export default function SettingsScreen() {
 
       {/* Other */}
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ACCOUNT</Text>
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>STORAGE</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <SettingRow icon="youtube" label="Connect YouTube account" />
           <SettingRow icon="download" label="Download quality" value="High" />
           <SettingRow icon="refresh-cw" label="Sync devices" />
         </View>
@@ -181,4 +258,30 @@ const styles = StyleSheet.create({
   rowInfo: { flex: 1 },
   rowLabel: { fontSize: 14, fontFamily: 'Inter_400Regular' },
   rowValue: { fontSize: 13, fontFamily: 'Inter_400Regular' },
+  // YouTube connected
+  ytConnected: { borderRadius: 16, overflow: 'hidden', padding: 16, gap: 12 },
+  ytUserRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  ytAvatar: { width: 48, height: 48, borderRadius: 24 },
+  ytAvatarFallback: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  ytAvatarInitial: { color: '#fff', fontSize: 20, fontFamily: 'Inter_700Bold' },
+  ytName: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
+  ytEmail: { fontSize: 12, fontFamily: 'Inter_400Regular', marginTop: 2 },
+  ytBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
+  ytBadgeText: { fontSize: 11, fontFamily: 'Inter_600SemiBold', color: '#ef4444' },
+  ytSignOutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 1 },
+  ytSignOutText: { fontSize: 13, fontFamily: 'Inter_600SemiBold' },
+  // YouTube disconnected
+  ytDisconnected: { borderRadius: 16, overflow: 'hidden', padding: 16, gap: 16 },
+  ytDisconnectedTop: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  ytIconBig: { width: 56, height: 56, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  ytConnectTitle: { fontSize: 16, fontFamily: 'Inter_700Bold' },
+  ytConnectDesc: { fontSize: 12, fontFamily: 'Inter_400Regular', marginTop: 3 },
+  ytSignInBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: '#fff', borderRadius: 10, paddingVertical: 12,
+    shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3,
+  },
+  googleG: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#4285F4', alignItems: 'center', justifyContent: 'center' },
+  googleGText: { color: '#fff', fontSize: 13, fontFamily: 'Inter_700Bold' },
+  ytSignInText: { fontSize: 14, fontFamily: 'Inter_600SemiBold', color: '#111' },
 });

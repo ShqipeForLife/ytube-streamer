@@ -16,6 +16,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { PlayerProvider } from '@/context/PlayerContext';
 import { LibraryProvider } from '@/context/LibraryContext';
+import { YouTubeProvider } from '@/context/YouTubeContext';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -56,11 +57,13 @@ export default function RootLayout() {
           <QueryClientProvider client={queryClient}>
             <PlayerProvider>
               <LibraryProvider>
-                <GestureHandlerRootView style={{ flex: 1 }}>
-                  <KeyboardProvider>
-                    <RootLayoutNav />
-                  </KeyboardProvider>
-                </GestureHandlerRootView>
+                <YouTubeProvider>
+                  <GestureHandlerRootView style={{ flex: 1 }}>
+                    <KeyboardProvider>
+                      <RootLayoutNav />
+                    </KeyboardProvider>
+                  </GestureHandlerRootView>
+                </YouTubeProvider>
               </LibraryProvider>
             </PlayerProvider>
           </QueryClientProvider>
