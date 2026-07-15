@@ -26,7 +26,7 @@ const ART_SIZE = Math.min(SCREEN_W - 48, 340);
 export default function PlayerScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { currentTrack, isPlaying, progress, currentTime, shuffle, repeat, pause, resume, next, previous, seek, toggleShuffle, toggleRepeat } = usePlayer();
+  const { currentTrack, isPlaying, progress, currentTime, duration, shuffle, repeat, pause, resume, next, previous, seek, toggleShuffle, toggleRepeat } = usePlayer();
   const { isFavorite, toggleFavorite } = useLibrary();
   const seekBarWidth = useRef(0);
   const [showQueue, setShowQueue] = React.useState(false);
@@ -47,12 +47,12 @@ export default function PlayerScreen() {
     onPanResponderGrant: (evt) => {
       const { locationX } = evt.nativeEvent;
       const ratio = locationX / (seekBarWidth.current || 1);
-      seek(ratio * currentTrack.duration);
+      seek(ratio * duration);
     },
     onPanResponderMove: (evt) => {
       const { locationX } = evt.nativeEvent;
       const ratio = Math.max(0, Math.min(1, locationX / (seekBarWidth.current || 1)));
-      seek(ratio * currentTrack.duration);
+      seek(ratio * duration);
     },
   });
 
@@ -114,7 +114,7 @@ export default function PlayerScreen() {
           </View>
           <View style={styles.timeRow}>
             <Text style={styles.timeText}>{formatDuration(currentTime)}</Text>
-            <Text style={styles.timeText}>{formatDuration(currentTrack.duration)}</Text>
+            <Text style={styles.timeText}>{formatDuration(duration)}</Text>
           </View>
         </View>
 

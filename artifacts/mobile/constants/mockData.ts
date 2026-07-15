@@ -4,16 +4,17 @@ export interface Track {
   artist: string;
   album: string;
   duration: number; // seconds
-  cover: ReturnType<typeof require>;
+  cover: any; // require() or { uri: string }
   genre: string;
   gradientColors: string[];
+  youtubeId?: string; // if set, plays via YouTube iframe
 }
 
 export interface Album {
   id: string;
   title: string;
   artist: string;
-  cover: ReturnType<typeof require>;
+  cover: any;
   year: number;
   tracks: Track[];
 }
@@ -22,7 +23,7 @@ export interface Playlist {
   id: string;
   name: string;
   description: string;
-  cover: ReturnType<typeof require>;
+  cover: any;
   trackCount: number;
   tracks: Track[];
   isUserCreated?: boolean;
@@ -31,7 +32,7 @@ export interface Playlist {
 export interface Artist {
   id: string;
   name: string;
-  image: ReturnType<typeof require>;
+  image: any;
   genre: string;
   followers: string;
 }
@@ -41,6 +42,35 @@ export interface SearchCategory {
   name: string;
   color: string;
 }
+
+// YouTube search result types
+export interface YTSearchVideo {
+  kind: 'video';
+  videoId: string;
+  title: string;
+  channelTitle: string;
+  thumbnail: string;
+  duration?: number; // seconds
+}
+
+export interface YTSearchChannel {
+  kind: 'channel';
+  channelId: string;
+  title: string;
+  thumbnail: string;
+  description: string;
+}
+
+export interface YTSearchPlaylist {
+  kind: 'playlist';
+  playlistId: string;
+  title: string;
+  channelTitle: string;
+  thumbnail: string;
+  itemCount?: number;
+}
+
+export type YTSearchResult = YTSearchVideo | YTSearchChannel | YTSearchPlaylist;
 
 const cover1 = require('@/assets/images/album1.png');
 const cover2 = require('@/assets/images/album2.png');
@@ -90,7 +120,7 @@ export const FEATURED_PLAYLISTS: Playlist[] = [
 
 export const QUICK_PICKS: Track[] = TRACKS.slice(0, 6);
 
-export const TRENDING_TRACKS: Track[] = [...TRACKS].sort(() => 0.5 - Math.random()).slice(0, 8);
+export const TRENDING_TRACKS: Track[] = TRACKS.slice(0, 8);
 
 export const ARTISTS: Artist[] = [
   { id: 'a1', name: 'Synth Nova', image: cover1, genre: 'Electronic', followers: '2.4M' },
@@ -108,6 +138,21 @@ export const SEARCH_CATEGORIES: SearchCategory[] = [
   { id: 'sc7', name: 'Classical', color: '#006699' },
   { id: 'sc8', name: 'Podcasts', color: '#009966' },
 ];
+
+/** Build a Track from a YouTube search result for the player */
+export function ytVideoToTrack(v: YTSearchVideo): Track {
+  return {
+    id: `yt-${v.videoId}`,
+    title: v.title,
+    artist: v.channelTitle,
+    album: 'YouTube',
+    duration: v.duration ?? 240,
+    cover: { uri: v.thumbnail },
+    genre: 'YouTube',
+    gradientColors: ['#1a0010', '#3d0000'],
+    youtubeId: v.videoId,
+  };
+}
 
 export function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);

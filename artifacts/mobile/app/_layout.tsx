@@ -17,6 +17,7 @@ import { ThemeProvider } from '@/context/ThemeContext';
 import { PlayerProvider } from '@/context/PlayerContext';
 import { LibraryProvider } from '@/context/LibraryContext';
 import { YouTubeProvider } from '@/context/YouTubeContext';
+import GlobalYouTubePlayer from '@/components/GlobalYouTubePlayer';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -24,13 +25,17 @@ const queryClient = new QueryClient();
 
 function RootLayoutNav() {
   return (
-    <Stack>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen
-        name="player"
-        options={{ headerShown: false, presentation: 'modal', animation: 'slide_from_bottom' }}
-      />
-    </Stack>
+    <>
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="player"
+          options={{ headerShown: false, presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+      </Stack>
+      {/* Hidden YouTube audio player — always mounted when a YT track is active */}
+      <GlobalYouTubePlayer />
+    </>
   );
 }
 

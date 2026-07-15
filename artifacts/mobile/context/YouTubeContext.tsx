@@ -3,11 +3,13 @@ import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking } from 'react-native';
+import { YTSearchResult, YTSearchVideo, YTSearchChannel, YTSearchPlaylist } from '@/constants/mockData';
 
 WebBrowser.maybeCompleteAuthSession();
 
 const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '';
 const STORAGE_KEY = '@youtube_auth_v1';
+const YT_API = 'https://www.googleapis.com/youtube/v3';
 
 export interface YouTubeUser {
   id: string;
@@ -31,16 +33,24 @@ export interface YouTubeVideo {
   thumbnail: string;
 }
 
+export interface YouTubeSearchResults {
+  videos: YTSearchVideo[];
+  channels: YTSearchChannel[];
+  playlists: YTSearchPlaylist[];
+}
+
 interface YouTubeContextValue {
   user: YouTubeUser | null;
   playlists: YouTubePlaylist[];
   likedVideos: YouTubeVideo[];
   isLoading: boolean;
   isReady: boolean;
+  accessToken: string | null;
   signIn: () => void;
   signOut: () => void;
   openVideo: (videoId: string) => void;
   openPlaylist: (playlistId: string) => void;
+  searchYouTube: (query: string) => Promise<YouTubeSearchResults>;
 }
 
 const YouTubeContext = createContext<YouTubeContextValue | null>(null);
@@ -49,6 +59,13 @@ export function useYouTube() {
   const ctx = useContext(YouTubeContext);
   if (!ctx) throw new Error('useYouTube must be used inside YouTubeProvider');
   return ctx;
+}
+
+/** Parse ISO 8601 duration (e.g. PT3M45S) to seconds */
+function parseISO8601Duration(s: string): number {
+  const m = s.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return 0;
+  return (parseInt(m[1] ?? '0') * 3600) + (parseInt(m[2] ?? '0') * 60) + parseInt(m[3] ?? '0');
 }
 
 export function YouTubeProvider({ children }: { children: React.ReactNode }) {
@@ -67,7 +84,6 @@ export function YouTubeProvider({ children }: { children: React.ReactNode }) {
     ],
   });
 
-  // Restore stored token on mount
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((stored) => {
       if (stored) {
@@ -79,7 +95,6 @@ export function YouTubeProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // Handle OAuth response
   useEffect(() => {
     if (response?.type === 'success') {
       const token = response.authentication?.accessToken;
@@ -90,7 +105,6 @@ export function YouTubeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [response]);
 
-  // Fetch YouTube data when token is available
   useEffect(() => {
     if (!accessToken) return;
     fetchAll(accessToken);
@@ -99,13 +113,11 @@ export function YouTubeProvider({ children }: { children: React.ReactNode }) {
   async function fetchAll(token: string) {
     setIsLoading(true);
     try {
-      // 1. User profile
       const profileRes = await fetch('https://www.googleapis.com/userinfo/v2/me', {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       if (!profileRes.ok) {
-        // Token likely expired
         clearSession();
         return;
       }
@@ -118,16 +130,13 @@ export function YouTubeProvider({ children }: { children: React.ReactNode }) {
         picture: profile.picture,
       });
 
-      // 2. User playlists
       const [playlistsRes, likedRes] = await Promise.all([
-        fetch(
-          'https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&mine=true&maxResults=50',
-          { headers: { Authorization: `Bearer ${token}` } }
-        ),
-        fetch(
-          'https://www.googleapis.com/youtube/v3/videos?part=snippet&myRating=like&maxResults=50',
-          { headers: { Authorization: `Bearer ${token}` } }
-        ),
+        fetch(`${YT_API}/playlists?part=snippet,contentDetails&mine=true&maxResults=50`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${YT_API}/videos?part=snippet&myRating=like&maxResults=50`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
       ]);
 
       if (playlistsRes.ok) {
@@ -139,8 +148,7 @@ export function YouTubeProvider({ children }: { children: React.ReactNode }) {
             description: item.snippet?.description ?? '',
             thumbnail:
               item.snippet?.thumbnails?.medium?.url ??
-              item.snippet?.thumbnails?.default?.url ??
-              '',
+              item.snippet?.thumbnails?.default?.url ?? '',
             itemCount: item.contentDetails?.itemCount ?? 0,
           }))
         );
@@ -155,8 +163,7 @@ export function YouTubeProvider({ children }: { children: React.ReactNode }) {
             channelTitle: item.snippet?.channelTitle ?? '',
             thumbnail:
               item.snippet?.thumbnails?.medium?.url ??
-              item.snippet?.thumbnails?.default?.url ??
-              '',
+              item.snippet?.thumbnails?.default?.url ?? '',
           }))
         );
       }
@@ -175,13 +182,8 @@ export function YouTubeProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.removeItem(STORAGE_KEY);
   }
 
-  const signIn = useCallback(() => {
-    promptAsync();
-  }, [promptAsync]);
-
-  const signOut = useCallback(() => {
-    clearSession();
-  }, []);
+  const signIn = useCallback(() => { promptAsync(); }, [promptAsync]);
+  const signOut = useCallback(() => { clearSession(); }, []);
 
   const openVideo = useCallback((videoId: string) => {
     const deep = `youtube://www.youtube.com/watch?v=${videoId}`;
@@ -195,6 +197,85 @@ export function YouTubeProvider({ children }: { children: React.ReactNode }) {
     Linking.canOpenURL(deep).then((can) => Linking.openURL(can ? deep : web));
   }, []);
 
+  /**
+   * Search YouTube for videos, channels, and playlists.
+   * Requires an authenticated access token.
+   */
+  const searchYouTube = useCallback(async (query: string): Promise<YouTubeSearchResults> => {
+    const empty: YouTubeSearchResults = { videos: [], channels: [], playlists: [] };
+    if (!accessToken || !query.trim()) return empty;
+
+    try {
+      // 1. Search: get videos, channels, playlists in one call
+      const searchRes = await fetch(
+        `${YT_API}/search?part=snippet&q=${encodeURIComponent(query)}&type=video,channel,playlist&maxResults=25&relevanceLanguage=fr`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!searchRes.ok) {
+        if (searchRes.status === 401) clearSession();
+        return empty;
+      }
+      const searchData = await searchRes.json();
+      const items: any[] = searchData.items ?? [];
+
+      const videoItems = items.filter((i) => i.id?.kind === 'youtube#video');
+      const channelItems = items.filter((i) => i.id?.kind === 'youtube#channel');
+      const playlistItems = items.filter((i) => i.id?.kind === 'youtube#playlist');
+
+      // 2. Fetch video durations
+      let durationMap: Record<string, number> = {};
+      if (videoItems.length > 0) {
+        const ids = videoItems.map((i) => i.id.videoId).join(',');
+        const detailRes = await fetch(
+          `${YT_API}/videos?part=contentDetails&id=${ids}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        if (detailRes.ok) {
+          const detailData = await detailRes.json();
+          for (const item of detailData.items ?? []) {
+            durationMap[item.id] = parseISO8601Duration(item.contentDetails?.duration ?? '');
+          }
+        }
+      }
+
+      const videos: YTSearchVideo[] = videoItems.map((item) => ({
+        kind: 'video' as const,
+        videoId: item.id.videoId,
+        title: item.snippet?.title ?? '',
+        channelTitle: item.snippet?.channelTitle ?? '',
+        thumbnail:
+          item.snippet?.thumbnails?.medium?.url ??
+          item.snippet?.thumbnails?.default?.url ?? '',
+        duration: durationMap[item.id.videoId],
+      }));
+
+      const channels: YTSearchChannel[] = channelItems.map((item) => ({
+        kind: 'channel' as const,
+        channelId: item.id.channelId,
+        title: item.snippet?.channelTitle ?? item.snippet?.title ?? '',
+        thumbnail:
+          item.snippet?.thumbnails?.medium?.url ??
+          item.snippet?.thumbnails?.default?.url ?? '',
+        description: item.snippet?.description ?? '',
+      }));
+
+      const playlists: YTSearchPlaylist[] = playlistItems.map((item) => ({
+        kind: 'playlist' as const,
+        playlistId: item.id.playlistId,
+        title: item.snippet?.title ?? '',
+        channelTitle: item.snippet?.channelTitle ?? '',
+        thumbnail:
+          item.snippet?.thumbnails?.medium?.url ??
+          item.snippet?.thumbnails?.default?.url ?? '',
+      }));
+
+      return { videos, channels, playlists };
+    } catch (e) {
+      console.error('[YouTube] search error:', e);
+      return empty;
+    }
+  }, [accessToken]);
+
   return (
     <YouTubeContext.Provider
       value={{
@@ -203,10 +284,12 @@ export function YouTubeProvider({ children }: { children: React.ReactNode }) {
         likedVideos,
         isLoading,
         isReady: !!request,
+        accessToken,
         signIn,
         signOut,
         openVideo,
         openPlaylist,
+        searchYouTube,
       }}
     >
       {children}
